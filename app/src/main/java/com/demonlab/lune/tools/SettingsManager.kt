@@ -47,6 +47,10 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean("is_exclusive_mode_enabled", false)
         set(value) = prefs.edit().putBoolean("is_exclusive_mode_enabled", value).apply()
 
+    var stopOnTaskRemoved: Boolean
+        get() = prefs.getBoolean("stop_on_task_removed", false)
+        set(value) = prefs.edit().putBoolean("stop_on_task_removed", value).apply()
+
     var keepScreenOn: Boolean
         get() = prefs.getBoolean("keep_screen_on", false)
         set(value) = prefs.edit().putBoolean("keep_screen_on", value).apply()

@@ -128,6 +128,52 @@ class LuneWidgetProvider : AppWidgetProvider() {
             }
         }
 
+        fun getWidgetLayoutResId(options: android.os.Bundle): Int {
+            val colSpan = options.getInt("semAppWidgetColumnSpan", -1)
+            val rowSpan = options.getInt("semAppWidgetRowSpan", -1)
+            val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+            val minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+
+            val isSingleRow = if (rowSpan > 0) rowSpan == 1 else minHeight in 1..125
+            val isThreeColumns = if (colSpan > 0) colSpan == 3 else minWidth in 180..270
+
+            return if (!isSingleRow && isThreeColumns) {
+                R.layout.lune_widget_layout_2x3
+            } else {
+                R.layout.lune_widget_layout
+            }
+        }
+
+        fun applyWidgetResponsiveLayout(views: RemoteViews, options: android.os.Bundle) {
+            val colSpan = options.getInt("semAppWidgetColumnSpan", -1)
+            val rowSpan = options.getInt("semAppWidgetRowSpan", -1)
+            val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+            val minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+
+            val isSingleRow = if (rowSpan > 0) rowSpan == 1 else minHeight in 1..125
+            val isThreeColumns = if (colSpan > 0) colSpan == 3 else minWidth in 180..270
+
+            // Output pill badge: visible only in 4-column widgets (1x4, 2x4)
+            if (isThreeColumns) {
+                views.setViewVisibility(R.id.widget_output_pill, android.view.View.GONE)
+            } else {
+                views.setViewVisibility(R.id.widget_output_pill, android.view.View.VISIBLE)
+            }
+
+            // Song title & artist: visible only in 2-row widgets (2x4, 2x3)
+            if (isSingleRow) {
+                views.setViewVisibility(R.id.widget_title, android.view.View.GONE)
+                views.setViewVisibility(R.id.widget_artist, android.view.View.GONE)
+            } else {
+                views.setViewVisibility(R.id.widget_title, android.view.View.VISIBLE)
+                views.setViewVisibility(R.id.widget_artist, android.view.View.VISIBLE)
+            }
+
+            // Playback controls: all 3 controls (Previous, Play/Pause, Next) are visible in 3 and 4 column sizes
+            views.setViewVisibility(R.id.widget_prev, android.view.View.VISIBLE)
+            views.setViewVisibility(R.id.widget_next, android.view.View.VISIBLE)
+        }
+
         fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             val playbackManager = PlaybackManager.getInstance(context)
             if (playbackManager.currentSong == null && !playbackManager.stateRestored) {
@@ -141,13 +187,12 @@ class LuneWidgetProvider : AppWidgetProvider() {
             val isPlaying = playbackManager.isPlaying
             val settingsManager = SettingsManager.getInstance(context)
 
-            val views = RemoteViews(context.packageName, R.layout.lune_widget_layout)
-
             val options = appWidgetManager.getAppWidgetOptions(appWidgetId)
-            val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
-            val isCompact = minHeight in 1..125
+            val layoutResId = getWidgetLayoutResId(options)
+            val views = RemoteViews(context.packageName, layoutResId)
 
             applyWidgetStyling(context, views, settingsManager)
+            applyWidgetResponsiveLayout(views, options)
 
             val openAppIntent = Intent(context, Lune::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
@@ -158,14 +203,6 @@ class LuneWidgetProvider : AppWidgetProvider() {
             if (currentSong != null) {
                 views.setTextViewText(R.id.widget_title, currentSong.title)
                 views.setTextViewText(R.id.widget_artist, currentSong.artist)
-
-                if (isCompact) {
-                    views.setViewVisibility(R.id.widget_title, android.view.View.GONE)
-                    views.setViewVisibility(R.id.widget_artist, android.view.View.GONE)
-                } else {
-                    views.setViewVisibility(R.id.widget_title, android.view.View.VISIBLE)
-                    views.setViewVisibility(R.id.widget_artist, android.view.View.VISIBLE)
-                }
 
                 views.setImageViewResource(R.id.widget_play_pause,
                     if (isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play)
@@ -209,13 +246,6 @@ class LuneWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_title, context.getString(R.string.no_song_playing))
                 views.setTextViewText(R.id.widget_artist, "")
 
-                if (isCompact) {
-                    views.setViewVisibility(R.id.widget_title, android.view.View.GONE)
-                    views.setViewVisibility(R.id.widget_artist, android.view.View.GONE)
-                } else {
-                    views.setViewVisibility(R.id.widget_title, android.view.View.VISIBLE)
-                    views.setViewVisibility(R.id.widget_artist, android.view.View.VISIBLE)
-                }
 
                 views.setImageViewResource(R.id.widget_play_pause, R.drawable.ic_widget_play)
                 views.setImageViewResource(R.id.widget_cover, R.drawable.ic_lune_placeholder)
@@ -337,8 +367,7 @@ class LuneWidgetProvider : AppWidgetProvider() {
             return output
         }
 
-        fun getCircularBitmap(bitmap: Bitmap): Bitmap {
-            val maxDim = 320
+        fun getCircularBitmap(bitmap: Bitmap, maxDim: Int = 400): Bitmap {
             val scaledBitmap = if (bitmap.width > maxDim || bitmap.height > maxDim || bitmap.width != bitmap.height) {
                 val size = Math.min(bitmap.width, Math.min(bitmap.height, maxDim))
                 val x = (bitmap.width - size) / 2
@@ -364,8 +393,7 @@ class LuneWidgetProvider : AppWidgetProvider() {
             return output
         }
 
-        fun getVinylRecordBitmap(bitmap: Bitmap): Bitmap {
-            val size = 320
+        fun getVinylRecordBitmap(bitmap: Bitmap, size: Int = 400): Bitmap {
             val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(output)
             val center = size / 2f
@@ -394,7 +422,7 @@ class LuneWidgetProvider : AppWidgetProvider() {
 
             // 3. Center circular album art (scaled to 55% diameter)
             val artSize = (size * 0.55f).toInt()
-            val circularArt = getCircularBitmap(bitmap)
+            val circularArt = getCircularBitmap(bitmap, artSize)
             val scaledArt = if (circularArt.width != artSize) {
                 Bitmap.createScaledBitmap(circularArt, artSize, artSize, true)
             } else circularArt

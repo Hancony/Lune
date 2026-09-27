@@ -590,6 +590,19 @@ class Lune : AppCompatActivity() {
             }
         }
     }
+
+    override fun onDestroy() {
+        val settingsManager = SettingsManager.getInstance(this)
+        if (settingsManager.stopOnTaskRemoved && isFinishing) {
+            val pm = PlaybackManager.getInstance(this)
+            pm.pause()
+            val intent = Intent(this, MusicService::class.java).apply {
+                action = MusicService.ACTION_DISMISS
+            }
+            startService(intent)
+        }
+        super.onDestroy()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2652,6 +2665,17 @@ fun MainScreen(
         BackHandler {
             onIsPlayerExpandedChange(false)
         }
+    }
+
+    val shouldStopOnClose = settingsManager.stopOnTaskRemoved
+    BackHandler(enabled = !isPlayerExpanded && selectedAlbum == null && selectedPlaylist == null && selectedFolderItem == null && !showSearchScreen && shouldStopOnClose) {
+        val pm = PlaybackManager.getInstance(context)
+        pm.pause()
+        val intent = Intent(context, MusicService::class.java).apply {
+            action = MusicService.ACTION_DISMISS
+        }
+        context.startService(intent)
+        (context as? Activity)?.finishAffinity()
     }
 
     // Search Screen Overlay

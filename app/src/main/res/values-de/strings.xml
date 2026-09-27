@@ -107,6 +107,8 @@
     <string name="audio_32bit_float_desc">Audio mit 32-Bit-Gleitkomma-Präzision verarbeiten für maximale Dynamik ohne Verzerrung</string>
     <string name="audio_exclusive_mode">Exklusiver Ausgabemodus</string>
     <string name="audio_exclusive_mode_desc">Android-System-Mixer über direkte AAudio-Hardware-Ausgabe umgehen</string>
+    <string name="stop_on_task_removed">Wiedergabe beim Schließen stoppen</string>
+    <string name="stop_on_task_removed_desc">Stoppt die Musik und schließt die Mediensteuerung, wenn die App aus den letzten Apps weggewischt wird</string>
     <string name="resume_recently_added">Kürzlich hinzugefügt</string>
     <string name="tab_all">Alle</string>
     <string name="tab_favorites">Favoriten</string>

@@ -357,9 +357,33 @@ class MusicService : MediaLibraryService() {
 
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (!isPlaying() && isNotificationDismissed) {
+        val shouldStopOnClose = settingsManager.stopOnTaskRemoved
+        Log.i("MusicService", "onTaskRemoved triggered: shouldStopOnClose=$shouldStopOnClose, isPlaying=${isPlaying()}")
+        if (shouldStopOnClose || !isPlaying()) {
+            isNotificationDismissed = true
+            pauseTimeoutJob?.cancel()
+            try {
+                mediaPlayer?.pause()
+                secondaryPlayer?.pause()
+            } catch (_: Exception) {}
+            val pm = PlaybackManager.getInstance(applicationContext)
+            pm.updatePlayingState(false)
+            pm.savePlaybackState(wasPlaying = false)
+            updatePlaybackState()
+            stopWidgetUpdateTimer()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            try {
+                val notificationManager = getSystemService(NotificationManager::class.java)
+                notificationManager?.cancel(1)
+            } catch (_: Exception) {}
             stopSelf()
         }
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -2033,24 +2057,15 @@ class MusicService : MediaLibraryService() {
             }
 
             for (appWidgetId in appWidgetIds) {
-                val views = RemoteViews(packageName, R.layout.lune_widget_layout)
-                LuneWidgetProvider.applyWidgetStyling(applicationContext, views, settingsManager)
-
                 val options = appWidgetManager.getAppWidgetOptions(appWidgetId)
-                val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
-                val isCompact = minHeight in 1..125
+                val layoutResId = LuneWidgetProvider.getWidgetLayoutResId(options)
+                val views = RemoteViews(packageName, layoutResId)
+                LuneWidgetProvider.applyWidgetStyling(applicationContext, views, settingsManager)
+                LuneWidgetProvider.applyWidgetResponsiveLayout(views, options)
 
                 if (song != null) {
                     views.setTextViewText(R.id.widget_title, song.title)
                     views.setTextViewText(R.id.widget_artist, song.artist)
-
-                    if (isCompact) {
-                        views.setViewVisibility(R.id.widget_title, android.view.View.GONE)
-                        views.setViewVisibility(R.id.widget_artist, android.view.View.GONE)
-                    } else {
-                        views.setViewVisibility(R.id.widget_title, android.view.View.VISIBLE)
-                        views.setViewVisibility(R.id.widget_artist, android.view.View.VISIBLE)
-                    }
 
                     views.setImageViewResource(R.id.widget_play_pause,
                         if (isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play)
@@ -2079,14 +2094,6 @@ class MusicService : MediaLibraryService() {
                 } else {
                     views.setTextViewText(R.id.widget_title, getString(R.string.no_song_playing))
                     views.setTextViewText(R.id.widget_artist, "")
-
-                    if (isCompact) {
-                        views.setViewVisibility(R.id.widget_title, android.view.View.GONE)
-                        views.setViewVisibility(R.id.widget_artist, android.view.View.GONE)
-                    } else {
-                        views.setViewVisibility(R.id.widget_title, android.view.View.VISIBLE)
-                        views.setViewVisibility(R.id.widget_artist, android.view.View.VISIBLE)
-                    }
 
                     views.setImageViewResource(R.id.widget_cover, R.drawable.ic_lune_placeholder)
                     if (settingsManager.widgetUseSolidBackground) {

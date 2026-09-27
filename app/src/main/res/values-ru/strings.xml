@@ -107,6 +107,8 @@
     <string name="audio_32bit_float_desc">Обработка звука с точностью 32-битной плавающей запятой для максимального запаса громкости без искажений</string>
     <string name="audio_exclusive_mode">Эксклюзивный режим вывода</string>
     <string name="audio_exclusive_mode_desc">Обход системного микшера Android через прямое аппаратное подключение AAudio</string>
+    <string name="stop_on_task_removed">Останавливать воспроизведение при закрытии</string>
+    <string name="stop_on_task_removed_desc">Останавливает музыку и убирает панель управления при смахивании приложения из недавних</string>
     <string name="resume_recently_added">Недавно добавленные</string>
     <string name="tab_all">Все</string>
     <string name="tab_favorites">Избранное</string>

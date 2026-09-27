@@ -106,6 +106,8 @@
     <string name="audio_32bit_float_desc">Process audio using 32-bit floating point precision for maximum headroom and zero clipping</string>
     <string name="audio_exclusive_mode">Exclusive Output Mode</string>
     <string name="audio_exclusive_mode_desc">Bypass Android system mixer via AAudio direct hardware routing</string>
+    <string name="stop_on_task_removed">Stop playback when closed</string>
+    <string name="stop_on_task_removed_desc">Stops playback and dismisses media controls when the app is swiped away from recent apps</string>
     <string name="resume_recently_added">Recently Added</string>
     <string name="tab_all">All</string>
     <string name="tab_favorites">Favorites</string>

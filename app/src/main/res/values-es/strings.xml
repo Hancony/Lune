@@ -107,6 +107,8 @@
     <string name="audio_32bit_float_desc">Procesa el audio en punto flotante de 32 bits previniendo distorsión y pérdida de resolución</string>
     <string name="audio_exclusive_mode">Modo Exclusivo (AAudio Direct Output)</string>
     <string name="audio_exclusive_mode_desc">Pasa por alto el mezclador de Android enviando sonido directo al hardware/DAC</string>
+    <string name="stop_on_task_removed">Detener reproducción al cerrar</string>
+    <string name="stop_on_task_removed_desc">Detiene la música y retira los controles multimedia al deslizar la app de recientes</string>
     <string name="resume_recently_added">Agregadas Recientemente</string>
     <string name="tab_all">Todo</string>
     <string name="tab_favorites">Favoritos</string>

@@ -107,6 +107,8 @@
     <string name="audio_32bit_float_desc">Traiter l\'audio en virgule flottante 32 bits pour une dynamique maximale sans saturation</string>
     <string name="audio_exclusive_mode">Mode de sortie exclusif</string>
     <string name="audio_exclusive_mode_desc">Contourner le mélangeur Android via le routage matériel direct AAudio</string>
+    <string name="stop_on_task_removed">Arrêter la lecture à la fermeture</string>
+    <string name="stop_on_task_removed_desc">Arrête la musique et ferme les commandes multimédias lorsque l\'application est fermée depuis les applications récentes</string>
     <string name="resume_recently_added">Ajoutées récemment</string>
     <string name="tab_all">Tout</string>
     <string name="tab_favorites">Favoris</string>

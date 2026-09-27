@@ -106,6 +106,8 @@
     <string name="audio_32bit_float_desc">معالجة الصوت بدقة النقطة العائمة 32 بت للحصول على أقصى مساحة للرأس (Headroom) وبدون تقطيع</string>
     <string name="audio_exclusive_mode">وضع الإخراج الحصري</string>
     <string name="audio_exclusive_mode_desc">تجاوز مازج نظام أندرويد عبر توجيه الأجهزة المباشر AAudio</string>
+    <string name="stop_on_task_removed">إيقاف التشغيل عند الإغلاق</string>
+    <string name="stop_on_task_removed_desc">إيقاف تشغيل الموسيقى وإزالة عناصر التحكم في الوسائط عند التمرير السريع لإغلاق التطبيق من التطبيقات الأخيرة</string>
     <string name="resume_recently_added">أضيف مؤخراً</string>
     <string name="tab_all">الكل</string>
     <string name="tab_favorites">المفضلة</string>

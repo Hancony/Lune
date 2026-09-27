@@ -106,6 +106,8 @@
     <string name="audio_32bit_float_desc">بالاترین کیفیت پردازش صدا بدون اینکه نویز بیفته</string>
     <string name="audio_exclusive_mode">خروجی مستقیم</string>
     <string name="audio_exclusive_mode_desc">میکسر اندروید رو دور می‌زنه و صدا رو مستقیم می‌فرسته سخت‌افزار</string>
+    <string name="stop_on_task_removed">توقف پخش هنگام بستن</string>
+    <string name="stop_on_task_removed_desc">توقف پخش موسیقی و بستن کنترل‌های رسانه‌ای هنگام بستن برنامه از برنامه‌های اخیر</string>
     <string name="resume_recently_added">تازه‌ها</string>
     <string name="tab_all">همه</string>
     <string name="tab_favorites">مورد علاقه‌ها</string>

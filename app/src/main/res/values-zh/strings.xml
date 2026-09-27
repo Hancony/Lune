@@ -107,6 +107,8 @@
     <string name="audio_32bit_float_desc">使用 32 位浮点精度处理音频，提供最大动态范围且无失真</string>
     <string name="audio_exclusive_mode">独占输出模式</string>
     <string name="audio_exclusive_mode_desc">通过 AAudio 硬件直通绕过 Android 系统混音器</string>
+    <string name="stop_on_task_removed">关闭应用时停止播放</string>
+    <string name="stop_on_task_removed_desc">从最近任务划掉应用时停止音乐并关闭媒体控制通知</string>
     <string name="resume_recently_added">最近添加</string>
     <string name="tab_all">全部</string>
     <string name="tab_favorites">收藏</string>
