@@ -135,12 +135,13 @@ class LuneWidgetProvider : AppWidgetProvider() {
             val minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
 
             val isSingleRow = if (rowSpan > 0) rowSpan == 1 else minHeight in 1..125
+            val isTwoColumns = if (colSpan > 0) colSpan <= 2 else minWidth in 1..179
             val isThreeColumns = if (colSpan > 0) colSpan == 3 else minWidth in 180..270
 
-            return if (!isSingleRow && isThreeColumns) {
-                R.layout.lune_widget_layout_2x3
-            } else {
-                R.layout.lune_widget_layout
+            return when {
+                !isSingleRow && isTwoColumns -> R.layout.lune_widget_layout_2x2
+                !isSingleRow && isThreeColumns -> R.layout.lune_widget_layout_2x3
+                else -> R.layout.lune_widget_layout
             }
         }
 
@@ -151,16 +152,17 @@ class LuneWidgetProvider : AppWidgetProvider() {
             val minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
 
             val isSingleRow = if (rowSpan > 0) rowSpan == 1 else minHeight in 1..125
+            val isTwoColumns = if (colSpan > 0) colSpan <= 2 else minWidth in 1..179
             val isThreeColumns = if (colSpan > 0) colSpan == 3 else minWidth in 180..270
 
             // Output pill badge: visible only in 4-column widgets (1x4, 2x4)
-            if (isThreeColumns) {
+            if (isTwoColumns || isThreeColumns) {
                 views.setViewVisibility(R.id.widget_output_pill, android.view.View.GONE)
             } else {
                 views.setViewVisibility(R.id.widget_output_pill, android.view.View.VISIBLE)
             }
 
-            // Song title & artist: visible only in 2-row widgets (2x4, 2x3)
+            // Song title & artist: visible in 2-row widgets (2x4, 2x3, 2x2)
             if (isSingleRow) {
                 views.setViewVisibility(R.id.widget_title, android.view.View.GONE)
                 views.setViewVisibility(R.id.widget_artist, android.view.View.GONE)
@@ -169,9 +171,14 @@ class LuneWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(R.id.widget_artist, android.view.View.VISIBLE)
             }
 
-            // Playback controls: all 3 controls (Previous, Play/Pause, Next) are visible in 3 and 4 column sizes
-            views.setViewVisibility(R.id.widget_prev, android.view.View.VISIBLE)
-            views.setViewVisibility(R.id.widget_next, android.view.View.VISIBLE)
+            // Playback controls: in 1x2 (1 row, 2 cols), only Play/Pause is shown. In 2x2, 2x3, 2x4, 1x3, 1x4, all 3 are shown.
+            if (isSingleRow && isTwoColumns) {
+                views.setViewVisibility(R.id.widget_prev, android.view.View.GONE)
+                views.setViewVisibility(R.id.widget_next, android.view.View.GONE)
+            } else {
+                views.setViewVisibility(R.id.widget_prev, android.view.View.VISIBLE)
+                views.setViewVisibility(R.id.widget_next, android.view.View.VISIBLE)
+            }
         }
 
         fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
