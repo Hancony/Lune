@@ -290,7 +290,7 @@ class SettingsManager(context: Context) {
             prefs.edit().putBoolean("is_bitrate_on_player", value).apply()
         }
 
-    private val _isOptionsBarVisible = mutableStateOf(prefs.getBoolean("is_options_bar_visible", true))
+    private val _isOptionsBarVisible = mutableStateOf(prefs.getBoolean("is_options_bar_visible", false))
     var isOptionsBarVisible: Boolean
         get() = _isOptionsBarVisible.value
         set(value) {

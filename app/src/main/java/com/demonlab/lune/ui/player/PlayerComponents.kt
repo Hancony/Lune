@@ -35,6 +35,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -66,6 +68,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -102,7 +105,6 @@ import com.demonlab.lune.ui.activities.EqualizerActivity
 import com.demonlab.lune.ui.sheets.AddToPlaylistDialog
 import com.demonlab.lune.ui.sheets.AudioDetailsBottomSheet
 import com.demonlab.lune.ui.sheets.CustomRepeatDialog
-import com.demonlab.lune.ui.sheets.CustomSleepTimerDialog
 import com.demonlab.lune.ui.sheets.PlayerOptionsBottomSheet
 import com.demonlab.lune.ui.sheets.QueueBottomSheet
 import com.demonlab.lune.ui.sheets.VisualizerSettingsBottomSheet
@@ -114,8 +116,10 @@ import com.demonlab.lune.ui.utils.songSwipeGestures
 import com.demonlab.lune.ui.viewmodels.MusicViewModel
 import java.io.File
 import kotlin.math.abs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -429,6 +433,282 @@ fun AudioQualityBadges(
     }
 }
 
+@Composable
+fun UnifiedMarqueeHeader(
+    song: Song,
+    useBlurControls: Boolean,
+    blurContainerColor: Color,
+    isAmoled: Boolean,
+    isDarkTheme: Boolean,
+    settingsManager: SettingsManager,
+    runtimeSampleRate: Int?,
+    runtimeBitDepth: Int?,
+    runtimeBitrate: Int?,
+    onArtistClick: ((String) -> Unit)?,
+    onAudioBadgesClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    key(song.id) {
+        var marqueeOffset by remember(song.id) { mutableFloatStateOf(0f) }
+        var isUserInteracting by remember(song.id) { mutableStateOf(false) }
+        var containerWidth by remember { mutableIntStateOf(0) }
+        var titleWidth by remember(song.id) { mutableIntStateOf(0) }
+        var artistRowWidth by remember(song.id) { mutableIntStateOf(0) }
+
+        val density = LocalDensity.current
+        val speedPxPerSec = with(density) { 28.dp.toPx() }
+        val spacingPx = with(density) { 40.dp.toPx() }
+
+        val isTitleLong = containerWidth > 0 && titleWidth > containerWidth
+        val isArtistLong = containerWidth > 0 && artistRowWidth > containerWidth
+        val shouldScroll = isTitleLong || isArtistLong
+
+        val cycle = when {
+            isTitleLong && isArtistLong -> maxOf(titleWidth, artistRowWidth) + spacingPx
+            isTitleLong -> titleWidth + spacingPx
+            isArtistLong -> artistRowWidth + spacingPx
+            else -> 0f
+        }
+
+        LaunchedEffect(song.id) {
+            marqueeOffset = 0f
+            isUserInteracting = false
+        }
+
+        LaunchedEffect(song.id, shouldScroll, isUserInteracting) {
+            if (isUserInteracting || !shouldScroll) return@LaunchedEffect
+            delay(1500L)
+            var lastFrameNanos = withFrameNanos { it }
+            while (isActive && !isUserInteracting && shouldScroll) {
+                withFrameNanos { frameNanos ->
+                    val dtSec = (frameNanos - lastFrameNanos) / 1_000_000_000f
+                    lastFrameNanos = frameNanos
+                    marqueeOffset += speedPxPerSec * dtSec
+                }
+            }
+        }
+
+        val titleContent: @Composable (Boolean) -> Unit = { isMeasuring ->
+            Text(
+                text = song.title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+                textAlign = TextAlign.Start,
+                color = if (useBlurControls) Color.White else MaterialTheme.colorScheme.onSurface,
+                modifier = if (isMeasuring) {
+                    Modifier.onSizeChanged { titleWidth = it.width }
+                } else {
+                    Modifier
+                }
+            )
+        }
+
+        val artistRowContent: @Composable (Boolean) -> Unit = { isMeasuring ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = if (isMeasuring) {
+                    Modifier.onSizeChanged { artistRowWidth = it.width }
+                } else {
+                    Modifier
+                }
+            ) {
+                Surface(
+                    color = if (useBlurControls) blurContainerColor else if (isAmoled) Color(0xFF222222) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(percent = 50),
+                    modifier = Modifier
+                        .bounceClick(0.95f)
+                        .clickable { onArtistClick?.invoke(song.artist) }
+                ) {
+                    Text(
+                        text = song.artist,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (useBlurControls) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
+
+                if (settingsManager.isBitrateOnPlayer) {
+                    AudioQualityBadges(
+                        song = song,
+                        runtimeSampleRate = runtimeSampleRate,
+                        runtimeBitDepth = runtimeBitDepth,
+                        runtimeBitrate = runtimeBitrate,
+                        useBlurControls = useBlurControls,
+                        isDarkTheme = isDarkTheme,
+                        onClick = onAudioBadgesClick,
+                        horizontalAlignment = Alignment.Start,
+                        enableScroll = false
+                    )
+                }
+            }
+        }
+
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .clipToBounds()
+                .onSizeChanged { containerWidth = it.width }
+                .pointerInput(song.id) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val downEvent = awaitPointerEvent(PointerEventPass.Initial)
+                            val downChange = downEvent.changes.firstOrNull { it.pressed } ?: continue
+                            val downId = downChange.id
+                            isUserInteracting = true
+
+                            var isDragging = false
+                            var totalDx = 0f
+                            val touchSlop = viewConfiguration.touchSlop
+
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull { it.id == downId }
+                                    if (change == null || !change.pressed) {
+                                        break
+                                    }
+
+                                    val dx = change.position.x - change.previousPosition.x
+                                    val dy = change.position.y - change.previousPosition.y
+
+                                    if (!isDragging) {
+                                        totalDx += dx
+                                        if (abs(totalDx) > touchSlop) {
+                                            if (abs(totalDx) > abs(dy)) {
+                                                isDragging = true
+                                                change.consume()
+                                                marqueeOffset = (marqueeOffset - dx).coerceAtLeast(0f)
+                                            } else {
+                                                break
+                                            }
+                                        }
+                                    } else {
+                                        change.consume()
+                                        marqueeOffset = (marqueeOffset - dx).coerceAtLeast(0f)
+                                    }
+                                }
+                            } finally {
+                                isUserInteracting = false
+                            }
+                        }
+                    }
+                },
+            horizontalAlignment = Alignment.Start
+        ) {
+            // Line 1: Song Title
+            if (!isTitleLong) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clipToBounds()
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                            val layoutWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width
+                            layout(layoutWidth, placeable.height) {
+                                placeable.placeRelative(0, 0)
+                            }
+                        }
+                ) {
+                    titleContent(true)
+                }
+            } else {
+                val offsetInCycle = if (cycle > 0f) ((marqueeOffset % cycle) + cycle) % cycle else 0f
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clipToBounds()
+                ) {
+                    // Copia 1
+                    Box(
+                        modifier = Modifier.layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                            val layoutWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width
+                            layout(layoutWidth, placeable.height) {
+                                placeable.placeRelative((-offsetInCycle).roundToInt(), 0)
+                            }
+                        }
+                    ) {
+                        titleContent(true)
+                    }
+
+                    // Copia 2
+                    Box(
+                        modifier = Modifier.layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                            val layoutWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width
+                            layout(layoutWidth, placeable.height) {
+                                placeable.placeRelative((-offsetInCycle + cycle).roundToInt(), 0)
+                            }
+                        }
+                    ) {
+                        titleContent(false)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Line 2: Artist & Audio Badges Row
+            if (!isArtistLong) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clipToBounds()
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                            val layoutWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width
+                            layout(layoutWidth, placeable.height) {
+                                placeable.placeRelative(0, 0)
+                            }
+                        }
+                ) {
+                    artistRowContent(true)
+                }
+            } else {
+                val offsetInCycle = if (cycle > 0f) ((marqueeOffset % cycle) + cycle) % cycle else 0f
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clipToBounds()
+                ) {
+                    // Copia 1
+                    Box(
+                        modifier = Modifier.layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                            val layoutWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width
+                            layout(layoutWidth, placeable.height) {
+                                placeable.placeRelative((-offsetInCycle).roundToInt(), 0)
+                            }
+                        }
+                    ) {
+                        artistRowContent(true)
+                    }
+
+                    // Copia 2
+                    Box(
+                        modifier = Modifier.layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                            val layoutWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width
+                            layout(layoutWidth, placeable.height) {
+                                placeable.placeRelative((-offsetInCycle + cycle).roundToInt(), 0)
+                            }
+                        }
+                    ) {
+                        artistRowContent(false)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FullPlayer(
@@ -534,8 +814,6 @@ fun FullPlayer(
     var showSpeedBar by remember { mutableStateOf(false) }
     var showVisualizerSettings by remember { mutableStateOf(false) }
     var showCustomRepeatDialog by remember { mutableStateOf(false) }
-    var showCustomSleepTimerDialogInPlayer by remember { mutableStateOf(false) }
-    var isAdvancedPillVisible by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val pillAnim = remember { Animatable(0f) }
@@ -560,6 +838,22 @@ fun FullPlayer(
                     stiffness = Spring.StiffnessLow
                 )
             )
+        }
+    }
+
+    LaunchedEffect(showVolumeBar) {
+        if (showVolumeBar) {
+            delay(3000)
+            showVolumeBar = false
+            retriggerPillAnim()
+        }
+    }
+
+    LaunchedEffect(showSpeedBar) {
+        if (showSpeedBar) {
+            delay(3000)
+            showSpeedBar = false
+            retriggerPillAnim()
         }
     }
 
@@ -1041,116 +1335,28 @@ fun FullPlayer(
         }
 
         val controlsSection: @Composable () -> Unit = {
-            var titleContentWidth by remember(song.id) { mutableIntStateOf(0) }
-            var artistContentWidth by remember(song.id, runtimeSampleRate, runtimeBitDepth, runtimeBitrate) { mutableIntStateOf(0) }
-            var containerWidth by remember(song.id) { mutableIntStateOf(0) }
-
-            val marqueeDensity = LocalDensity.current
-            val marqueeSpacingDp = 40.dp
-            val marqueeSpacingPx = with(marqueeDensity) { marqueeSpacingDp.roundToPx() }
-            val baseMarqueeVelocityDp = 30.dp
-
-            val isTitleOverflowing = containerWidth > 0 && titleContentWidth > containerWidth
-            val isArtistOverflowing = containerWidth > 0 && artistContentWidth > containerWidth
-
-            val (titleVelocity, artistVelocity) = remember(
-                titleContentWidth,
-                artistContentWidth,
-                containerWidth,
-                marqueeDensity
-            ) {
-                if (isTitleOverflowing && isArtistOverflowing && titleContentWidth > 0 && artistContentWidth > 0) {
-                    val dTitle = (titleContentWidth + marqueeSpacingPx).toFloat()
-                    val dArtist = (artistContentWidth + marqueeSpacingPx).toFloat()
-                    val dMax = maxOf(dTitle, dArtist)
-                    val vTitle = baseMarqueeVelocityDp * (dTitle / dMax)
-                    val vArtist = baseMarqueeVelocityDp * (dArtist / dMax)
-                    vTitle to vArtist
-                } else {
-                    baseMarqueeVelocityDp to baseMarqueeVelocityDp
-                }
-            }
-
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 12.dp)
-                        .onSizeChanged { containerWidth = it.width },
-                    horizontalAlignment = Alignment.Start
-                ) {
-                    key(song.id) {
-                        Text(
-                            text = song.title,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            textAlign = TextAlign.Start,
-                            color = if (useBlurControls) Color.White else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .basicMarquee(
-                                    iterations = Int.MAX_VALUE,
-                                    repeatDelayMillis = 1500,
-                                    initialDelayMillis = 1500,
-                                    spacing = MarqueeSpacing(marqueeSpacingDp),
-                                    velocity = titleVelocity
-                                )
-                                .onSizeChanged { titleContentWidth = it.width }
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .basicMarquee(
-                                    iterations = Int.MAX_VALUE,
-                                    repeatDelayMillis = 1500,
-                                    initialDelayMillis = 1500,
-                                    spacing = MarqueeSpacing(marqueeSpacingDp),
-                                    velocity = artistVelocity
-                                )
-                                .onSizeChanged { artistContentWidth = it.width },
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Surface(
-                                color = if (useBlurControls) blurContainerColor else if (isAmoled) Color(0xFF222222) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(percent = 50),
-                                modifier = Modifier
-                                    .clickable { onArtistClick?.invoke(song.artist) }
-                            ) {
-                                Text(
-                                    text = song.artist,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (useBlurControls) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    textAlign = TextAlign.Start,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                                )
-                            }
-
-                            if (settingsManager.isBitrateOnPlayer) {
-                                AudioQualityBadges(
-                                    song = song,
-                                    runtimeSampleRate = runtimeSampleRate,
-                                    runtimeBitDepth = runtimeBitDepth,
-                                    runtimeBitrate = runtimeBitrate,
-                                    useBlurControls = useBlurControls,
-                                    isDarkTheme = isDarkTheme,
-                                    onClick = { showAudioDetailsSheet = true },
-                                    horizontalAlignment = Alignment.Start,
-                                    enableScroll = false
-                                )
-                            }
-                        }
-                    }
+                key(song.id) {
+                    UnifiedMarqueeHeader(
+                        song = song,
+                        useBlurControls = useBlurControls,
+                        blurContainerColor = blurContainerColor,
+                        isAmoled = isAmoled,
+                        isDarkTheme = isDarkTheme,
+                        settingsManager = settingsManager,
+                        runtimeSampleRate = runtimeSampleRate,
+                        runtimeBitDepth = runtimeBitDepth,
+                        runtimeBitrate = runtimeBitrate,
+                        onArtistClick = onArtistClick,
+                        onAudioBadgesClick = { showAudioDetailsSheet = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 12.dp)
+                    )
                 }
 
                 val pillBg = if (useBlurControls) blurContainerColor else if (isAmoled) Color(0xFF222222) else if (isDarkTheme) Color.Black.copy(alpha = 0.40f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
@@ -1484,428 +1690,206 @@ fun FullPlayer(
 
             Spacer(modifier = Modifier.height(if (isLandscape) 12.dp else 16.dp))
 
-            val pillBg = if (useBlurControls) {
-                blurContainerColor
-            } else if (isAmoled) {
-                Color(0xFF222222)
-            } else {
-                if (isDarkTheme) Color.Black.copy(alpha = 0.40f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
-            }
+            AnimatedContent(
+                targetState = Pair(showVolumeBar, showSpeedBar),
+                transitionSpec = {
+                    fadeIn() togetherWith fadeOut()
+                },
+                label = "BarsTransition"
+            ) { (isVolumeVisible, isSpeedVisible) ->
+                if (isVolumeVisible) {
+                    var sliderValue by remember { mutableStateOf(playbackManager.currentVolumePercent) }
 
-            val pillDivider = if (useBlurControls) {
-                if (isDarkTheme) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.15f)
-            } else if (isAmoled) {
-                Color.White.copy(alpha = 0.15f)
-            } else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    LaunchedEffect(playbackManager.currentVolumePercent) {
+                        sliderValue = playbackManager.currentVolumePercent
+                    }
 
-            val activeAccent = if (useBlurControls) {
-                Color.White
-            } else if (useCustomControlsColor) {
-                activePrimary
-            } else {
-                MaterialTheme.colorScheme.primary
-            }
-            val inactiveTint = if (useBlurControls) {
-                Color.White.copy(alpha = 0.35f)
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.40f)
-            }
-            val actionIconTint = if (useBlurControls) {
-                Color.White.copy(alpha = 0.65f)
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.80f)
-            }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier.width(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (sliderValue == 0f) Icons.AutoMirrored.Filled.VolumeOff else if (sliderValue < 0.5f) Icons.AutoMirrored.Filled.VolumeDown else Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = null,
+                                tint = if (hasBlurBackground) Color.White else if (useCustomControlsColor) activePrimary else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
 
-            val isShuffling = playbackManager.isShuffle
-            val shuffleTint by animateColorAsState(
-                targetValue = if (isShuffling) activeAccent else inactiveTint,
-                label = "shuffleTint"
-            )
+                        val volumeSliderState = remember { SliderState(sliderValue.coerceIn(0f, 1f)) }
+                        LaunchedEffect(sliderValue) {
+                            volumeSliderState.value = sliderValue.coerceIn(0f, 1f)
+                        }
 
-            val isRepeatActive = playbackManager.repeatMode > 0
-            val repeatIcon = when (playbackManager.repeatMode) {
-                1 -> Icons.Default.RepeatOne
-                else -> Icons.Default.Repeat
-            }
-            val repeatTint by animateColorAsState(
-                targetValue = if (isRepeatActive) activeAccent else inactiveTint,
-                label = "repeatTint"
-            )
+                        Slider(
+                            state = volumeSliderState,
+                            onValueChange = {
+                                sliderValue = it
+                                playbackManager.setVolume(it)
+                            },
+                            thumb = { _ -> },
+                            modifier = Modifier.weight(0.5f),
+                            colors = SliderDefaults.colors(
+                                activeTrackColor = if (hasBlurBackground) Color.White else if (useCustomControlsColor) activePrimary else MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = if (hasBlurBackground) Color.White.copy(alpha = 0.3f) else (if (useCustomControlsColor) activePrimary else MaterialTheme.colorScheme.primary).copy(alpha = 0.2f)
+                            )
+                        )
 
-            val audioTint by animateColorAsState(
-                targetValue = if (showVolumeBar) activeAccent else actionIconTint,
-                label = "audioTint"
-            )
+                        Box(
+                            modifier = Modifier.width(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "${(sliderValue * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (hasBlurBackground) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else if (isSpeedVisible) {
+                    var speedValue by remember { mutableStateOf(playbackManager.playbackSpeed) }
 
-            val isTimerActive = playbackManager.sleepTimerMinutes > 0
-            val timerTint by animateColorAsState(
-                targetValue = if (isTimerActive) activeAccent else inactiveTint,
-                label = "timerTint"
-            )
+                    LaunchedEffect(playbackManager.playbackSpeed) {
+                        speedValue = playbackManager.playbackSpeed
+                    }
 
-            val isSpeedActive = showSpeedBar || playbackManager.playbackSpeed != 1.0f
-            val speedTint by animateColorAsState(
-                targetValue = if (isSpeedActive) activeAccent else inactiveTint,
-                label = "speedTint"
-            )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        val speedSteps = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
-            val isCrossfadeActive = playbackManager.isCrossfade
-            val crossfadeTint by animateColorAsState(
-                targetValue = if (isCrossfadeActive) activeAccent else inactiveTint,
-                label = "crossfadeTint"
-            )
-
-            val isAutomixActive = playbackManager.isAutomix
-            val automixTint by animateColorAsState(
-                targetValue = if (isAutomixActive) activeAccent else inactiveTint,
-                label = "automixTint"
-            )
-
-            val currentPillState = when {
-                showVolumeBar -> "VOLUME"
-                showSpeedBar -> "SPEED"
-                isAdvancedPillVisible -> "ADVANCED"
-                else -> "MAIN"
-            }
-
-            // Main Bottom Controls Row: Unified Pill (with Volume/Speed/Main/Advanced morphing) + Standalone CAVA Transition Button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Unified Main Pill (Toggles smoothly between Píldora A, Píldora B, Volume Slider, Speed Selector)
-                Surface(
-                    shape = CircleShape,
-                    color = pillBg,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(42.dp)
-                ) {
-                    AnimatedContent(
-                        targetState = currentPillState,
-                        transitionSpec = {
-                            (fadeIn(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
-                                scaleIn(initialScale = 0.94f, animationSpec = tween(220, easing = FastOutSlowInEasing)))
-                                .togetherWith(
-                                    fadeOut(animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-                                    scaleOut(targetScale = 0.94f, animationSpec = tween(180, easing = FastOutSlowInEasing))
-                                )
-                        },
-                        label = "PillContentTransition"
-                    ) { state ->
-                        when (state) {
-                            "VOLUME" -> {
-                                var sliderValue by remember { mutableStateOf(playbackManager.currentVolumePercent) }
-
-                                LaunchedEffect(playbackManager.currentVolumePercent) {
-                                    sliderValue = playbackManager.currentVolumePercent
-                                }
-
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(34.dp)
-                                            .bounceClick(0.92f)
-                                            .clip(CircleShape)
-                                            .clickable { showVolumeBar = false },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = if (sliderValue == 0f) Icons.AutoMirrored.Filled.VolumeOff else if (sliderValue < 0.5f) Icons.AutoMirrored.Filled.VolumeDown else Icons.AutoMirrored.Filled.VolumeUp,
-                                            contentDescription = null,
-                                            tint = if (useBlurControls) Color.White else activeAccent,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-
-                                    val volumeSliderState = remember { SliderState(sliderValue.coerceIn(0f, 1f)) }
-                                    LaunchedEffect(sliderValue) {
-                                        volumeSliderState.value = sliderValue.coerceIn(0f, 1f)
-                                    }
-
-                                    Slider(
-                                        state = volumeSliderState,
-                                        onValueChange = {
-                                            sliderValue = it
-                                            playbackManager.setVolume(it)
+                        Surface(
+                            shape = CircleShape,
+                            color = if (hasBlurBackground) blurContainerColor else if (isAmoled) Color(0xFF222222) else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                speedSteps.forEach { speedOption ->
+                                    val isSelected = Math.abs(speedOption - speedValue) < 0.05f
+                                    Surface(
+                                        onClick = {
+                                            speedValue = speedOption
+                                            playbackManager.updatePlaybackSpeed(speedOption)
                                         },
-                                        thumb = { _ -> },
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .padding(horizontal = 4.dp),
-                                        colors = SliderDefaults.colors(
-                                            activeTrackColor = if (useBlurControls) Color.White else activeAccent,
-                                            inactiveTrackColor = if (useBlurControls) Color.White.copy(alpha = 0.3f) else activeAccent.copy(alpha = 0.2f)
-                                        )
-                                    )
-
-                                    Box(
-                                        modifier = Modifier.width(40.dp),
-                                        contentAlignment = Alignment.Center
+                                        shape = CircleShape,
+                                        color = if (isSelected) if (hasBlurBackground) Color.White else if (useCustomControlsColor) activePrimary else MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        contentColor = if (isSelected) if (hasBlurBackground) Color.Black.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onPrimary else if (hasBlurBackground) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
-                                            "${(sliderValue * 100).toInt()}%",
+                                            text = if (speedOption == 1.0f) "1x" else "${speedOption}x",
                                             style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (useBlurControls) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            textAlign = TextAlign.Center
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(vertical = 8.dp)
                                         )
                                     }
                                 }
                             }
-                            "SPEED" -> {
-                                var speedValue by remember { mutableStateOf(playbackManager.playbackSpeed) }
+                        }
+                    }
+                } else {
+                    val pillBg = if (useBlurControls) {
+                        blurContainerColor
+                    } else if (isAmoled) {
+                        Color(0xFF222222)
+                    } else {
+                        if (isDarkTheme) Color.Black.copy(alpha = 0.40f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                    }
 
-                                LaunchedEffect(playbackManager.playbackSpeed) {
-                                    speedValue = playbackManager.playbackSpeed
-                                }
+                    val pillDivider = if (useBlurControls) {
+                        if (isDarkTheme) Color.White.copy(alpha = 0.20f) else Color.Black.copy(alpha = 0.15f)
+                    } else if (isAmoled) {
+                        Color.White.copy(alpha = 0.15f)
+                    } else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
 
-                                val speedSteps = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+                    val activeAccent = if (useBlurControls) {
+                        Color.White
+                    } else if (useCustomControlsColor) {
+                        activePrimary
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
 
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    speedSteps.forEach { speedOption ->
-                                        val isSelected = Math.abs(speedOption - speedValue) < 0.05f
-                                        Surface(
-                                            onClick = {
-                                                speedValue = speedOption
-                                                playbackManager.updatePlaybackSpeed(speedOption)
-                                            },
-                                            shape = CircleShape,
-                                            color = if (isSelected) (if (useBlurControls) Color.White else activeAccent) else Color.Transparent,
-                                            contentColor = if (isSelected) (if (useBlurControls) Color.Black.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onPrimary) else (if (useBlurControls) Color.White else MaterialTheme.colorScheme.onSurfaceVariant),
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .fillMaxHeight()
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Text(
-                                                    text = if (speedOption == 1.0f) "1x" else "${speedOption}x",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    textAlign = TextAlign.Center,
-                                                    maxLines = 1
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
+                    val itemTint = if (useBlurControls) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+
+                    val hasLyrics = playbackManager.currentLyrics != null
+                    val lyricsTint by animateColorAsState(
+                        targetValue = if (hasLyrics) {
+                            if (useBlurControls) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            if (useBlurControls) Color.White.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        },
+                        label = "lyricsTint"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Bottom-Left Corner: Shuffle & Repeat pill
+                        AnimatedVisibility(
+                            visible = !settingsManager.isOptionsBarVisible,
+                            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                                    scaleIn(initialScale = 0.8f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)),
+                            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                                   scaleOut(targetScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+                            modifier = Modifier.align(Alignment.CenterStart)
+                        ) {
+                            val isShuffling = playbackManager.isShuffle
+                            val shuffleTint by animateColorAsState(
+                                targetValue = if (isShuffling) {
+                                    activeAccent
+                                } else {
+                                    if (useBlurControls) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                },
+                                label = "shuffleTint"
+                            )
+
+                            val isRepeatActive = playbackManager.repeatMode > 0
+                            val repeatIcon = when (playbackManager.repeatMode) {
+                                1 -> Icons.Default.RepeatOne
+                                else -> Icons.Default.Repeat
                             }
-                            "ADVANCED" -> {
-                                // PÍLDORA B: [ Timer | Speed | Crossfade | Automix | Options (...) ]
+                            val repeatTint by animateColorAsState(
+                                targetValue = if (isRepeatActive) {
+                                    activeAccent
+                                } else {
+                                    if (useBlurControls) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                },
+                                label = "repeatTint"
+                            )
+
+                            Surface(
+                                shape = CircleShape,
+                                color = pillBg,
+                                modifier = Modifier.height(40.dp)
+                            ) {
                                 Row(
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 2.dp)
                                 ) {
-                                    // 1. Timer (Click toggle, long-press custom dialog, displays set minutes without container circle and hides icon when active)
+                                    // Shuffle
                                     Box(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
-                                            .bounceClick(0.92f)
-                                            .clip(CircleShape)
-                                            .combinedClickable(
-                                                onClick = { playbackManager.toggleSleepTimer() },
-                                                onLongClick = { showCustomSleepTimerDialogInPlayer = true }
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        AnimatedContent(
-                                            targetState = playbackManager.sleepTimerMinutes > 0,
-                                            transitionSpec = {
-                                                (fadeIn(animationSpec = tween(150)) + scaleIn(initialScale = 0.8f))
-                                                    .togetherWith(fadeOut(animationSpec = tween(120)) + scaleOut(targetScale = 0.8f))
-                                            },
-                                            label = "TimerStateTransition"
-                                        ) { isTimerOn ->
-                                            if (isTimerOn) {
-                                                val timerText = if (playbackManager.sleepTimerMinutes >= 60 && playbackManager.sleepTimerMinutes % 60 == 0) {
-                                                    "${playbackManager.sleepTimerMinutes / 60}h"
-                                                } else if (playbackManager.sleepTimerMinutes >= 60) {
-                                                    "${playbackManager.sleepTimerMinutes / 60}h${playbackManager.sleepTimerMinutes % 60}m"
-                                                } else {
-                                                    "${playbackManager.sleepTimerMinutes}m"
-                                                }
-                                                Text(
-                                                    text = timerText,
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 12.sp,
-                                                    color = timerTint,
-                                                    maxLines = 1
-                                                )
-                                            } else {
-                                                Icon(
-                                                    imageVector = Icons.Default.Timer,
-                                                    contentDescription = stringResource(R.string.option_timer),
-                                                    tint = timerTint,
-                                                    modifier = Modifier.size(19.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    // Divider
-                                    Box(
-                                        modifier = Modifier
-                                            .width(1.dp)
-                                            .height(18.dp)
-                                            .background(pillDivider)
-                                    )
-
-                                    // 2. Speed (Toggles smooth speed selector inside the pill)
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
-                                            .bounceClick(0.92f)
-                                            .clip(CircleShape)
-                                            .clickable {
-                                                showVolumeBar = false
-                                                showSpeedBar = true
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Speed,
-                                            contentDescription = stringResource(R.string.option_speed),
-                                            tint = speedTint,
-                                            modifier = Modifier.size(19.dp)
-                                        )
-                                    }
-
-                                    // Divider
-                                    Box(
-                                        modifier = Modifier
-                                            .width(1.dp)
-                                            .height(18.dp)
-                                            .background(pillDivider)
-                                    )
-
-                                    // 3. Crossfade
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
-                                            .bounceClick(0.92f)
-                                            .clip(CircleShape)
-                                            .clickable { playbackManager.toggleCrossfade() },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Tune,
-                                            contentDescription = stringResource(R.string.option_crossfade),
-                                            tint = crossfadeTint,
-                                            modifier = Modifier.size(19.dp)
-                                        )
-                                    }
-
-                                    // Divider
-                                    Box(
-                                        modifier = Modifier
-                                            .width(1.dp)
-                                            .height(18.dp)
-                                            .background(pillDivider)
-                                    )
-
-                                    // 4. Automix
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
-                                            .bounceClick(0.92f)
-                                            .clip(CircleShape)
-                                            .clickable { playbackManager.toggleAutomix() },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.AutoAwesome,
-                                            contentDescription = stringResource(R.string.option_automix),
-                                            tint = automixTint,
-                                            modifier = Modifier.size(19.dp)
-                                        )
-                                    }
-
-                                    // Divider
-                                    Box(
-                                        modifier = Modifier
-                                            .width(1.dp)
-                                            .height(18.dp)
-                                            .background(pillDivider)
-                                    )
-
-                                    // 5. Options (3 puntos al final de la segunda pildora)
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
-                                            .bounceClick(0.92f)
-                                            .clip(CircleShape)
-                                            .clickable { showOptionsSheet = true },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.MoreHoriz,
-                                            contentDescription = stringResource(R.string.player_options),
-                                            tint = actionIconTint,
-                                            modifier = Modifier.size(19.dp)
-                                        )
-                                    }
-                                }
-                            }
-                            else -> {
-                                // PÍLDORA A: [ Device | Shuffle | Repeat | Queue | Playlist ]
-                                // "la opcion de device debe ir primero de izquierda a derecha"
-                                Row(
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // 1. Device (Audio / Volume toggle) - Primero de izquierda a derecha
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
-                                            .bounceClick(0.92f)
-                                            .clip(CircleShape)
-                                            .clickable {
-                                                showSpeedBar = false
-                                                showVolumeBar = true
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = playbackManager.currentOutputIcon,
-                                            contentDescription = playbackManager.currentOutputName,
-                                            tint = audioTint,
-                                            modifier = Modifier.size(19.dp)
-                                        )
-                                    }
-
-                                    // Divider
-                                    Box(
-                                        modifier = Modifier
-                                            .width(1.dp)
-                                            .height(18.dp)
-                                            .background(pillDivider)
-                                    )
-
-                                    // 2. Shuffle
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
+                                            .size(36.dp)
                                             .bounceClick(0.92f)
                                             .clip(CircleShape)
                                             .clickable { playbackManager.toggleShuffle() },
@@ -1927,11 +1911,10 @@ fun FullPlayer(
                                             .background(pillDivider)
                                     )
 
-                                    // 3. Repeat (Click toggle, long-press custom dialog)
+                                    // Repeat
                                     Box(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
+                                            .size(36.dp)
                                             .bounceClick(0.92f)
                                             .clip(CircleShape)
                                             .combinedClickable(
@@ -1947,20 +1930,229 @@ fun FullPlayer(
                                             modifier = Modifier.size(19.dp)
                                         )
                                     }
+                                }
+                            }
+                        }
 
-                                    // Divider
-                                    Box(
-                                        modifier = Modifier
-                                            .width(1.dp)
-                                            .height(18.dp)
-                                            .background(pillDivider)
+                        AnimatedContent(
+                            targetState = settingsManager.isOptionsBarVisible,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                                    scaleIn(initialScale = 0.85f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)))
+                                    .togetherWith(
+                                        fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                                        scaleOut(targetScale = 0.85f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
                                     )
+                            },
+                            label = "OptionsPillMorph"
+                        ) { isExpanded ->
+                            if (isExpanded) {
+                                // Full Divided Pill Toolbar (Expanded)
+                                Surface(
+                                    shape = CircleShape,
+                                    color = pillBg,
+                                    modifier = Modifier.height(40.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 6.dp)
+                                    ) {
+                                        // 1. Device / Volume
+                                        Box(
+                                            modifier = Modifier
+                                                .bounceClick(0.92f)
+                                                .clip(CircleShape)
+                                                .clickable { showVolumeBar = true }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = playbackManager.currentOutputIcon,
+                                                contentDescription = playbackManager.currentOutputName,
+                                                tint = itemTint,
+                                                modifier = Modifier.size(19.dp)
+                                            )
+                                        }
 
-                                    // 4. Queue
+                                        // Divider
+                                        Box(
+                                            modifier = Modifier
+                                                .width(1.dp)
+                                                .height(18.dp)
+                                                .background(pillDivider)
+                                        )
+
+                                        // 2. Queue
+                                        Box(
+                                            modifier = Modifier
+                                                .bounceClick(0.92f)
+                                                .clip(CircleShape)
+                                                .clickable { showQueueSheet = true }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                                contentDescription = stringResource(R.string.player_queue),
+                                                tint = itemTint,
+                                                modifier = Modifier.size(19.dp)
+                                            )
+                                        }
+
+                                        // Divider
+                                        Box(
+                                            modifier = Modifier
+                                                .width(1.dp)
+                                                .height(18.dp)
+                                                .background(pillDivider)
+                                        )
+
+                                        // 3. Speed
+                                        Box(
+                                            modifier = Modifier
+                                                .bounceClick(0.92f)
+                                                .clip(CircleShape)
+                                                .clickable { showSpeedBar = true }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Speed,
+                                                contentDescription = stringResource(R.string.option_speed),
+                                                tint = itemTint,
+                                                modifier = Modifier.size(19.dp)
+                                            )
+                                        }
+
+                                        // Divider
+                                        Box(
+                                            modifier = Modifier
+                                                .width(1.dp)
+                                                .height(18.dp)
+                                                .background(pillDivider)
+                                        )
+
+                                        // 4. Options
+                                        Box(
+                                            modifier = Modifier
+                                                .bounceClick(0.92f)
+                                                .clip(CircleShape)
+                                                .clickable { showOptionsSheet = true }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreHoriz,
+                                                contentDescription = stringResource(R.string.player_options),
+                                                tint = itemTint,
+                                                modifier = Modifier.size(19.dp)
+                                            )
+                                        }
+
+                                        // Divider
+                                        Box(
+                                            modifier = Modifier
+                                                .width(1.dp)
+                                                .height(18.dp)
+                                                .background(pillDivider)
+                                        )
+
+                                        // 5. Lyrics
+                                        Box(
+                                            modifier = Modifier
+                                                .bounceClick(0.92f)
+                                                .clip(CircleShape)
+                                                .clickable { onShowLyrics() }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Lyrics,
+                                                contentDescription = stringResource(R.string.option_lyrics),
+                                                tint = lyricsTint,
+                                                modifier = Modifier.size(19.dp)
+                                            )
+                                        }
+
+                                        // Divider
+                                        Box(
+                                            modifier = Modifier
+                                                .width(1.dp)
+                                                .height(18.dp)
+                                                .background(pillDivider)
+                                        )
+
+                                        // 6. Collapse Button
+                                        Box(
+                                            modifier = Modifier
+                                                .bounceClick(0.92f)
+                                                .clip(CircleShape)
+                                                .clickable { settingsManager.isOptionsBarVisible = false }
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = stringResource(R.string.hide_options),
+                                                tint = itemTint.copy(alpha = 0.7f),
+                                                modifier = Modifier.size(17.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Discreet Mini-Capsule (Collapsed: '•••')
+                                Surface(
+                                    shape = CircleShape,
+                                    color = pillBg,
+                                    modifier = Modifier
+                                        .height(36.dp)
+                                        .bounceClick(0.92f)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            settingsManager.isOptionsBarVisible = true
+                                            retriggerPillAnim()
+                                        }
+                                ) {
+                                    Box(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CavaThreeDots(
+                                            isPlaying = isPlaying,
+                                            visualizerData = effectiveVisualizerData,
+                                            tint = itemTint,
+                                            modifier = Modifier.height(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Bottom-Right Corner: Queue & Add to Playlist pill
+                        AnimatedVisibility(
+                            visible = !settingsManager.isOptionsBarVisible,
+                            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                                    scaleIn(initialScale = 0.8f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)),
+                            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                                   scaleOut(targetScale = 0.8f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        ) {
+                            val actionIconTint = if (useBlurControls) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant
+
+                            Surface(
+                                shape = CircleShape,
+                                color = pillBg,
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                ) {
+                                    // Queue
                                     Box(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
+                                            .size(36.dp)
                                             .bounceClick(0.92f)
                                             .clip(CircleShape)
                                             .clickable { showQueueSheet = true },
@@ -1982,11 +2174,10 @@ fun FullPlayer(
                                             .background(pillDivider)
                                     )
 
-                                    // 5. Playlist
+                                    // Add to Playlist
                                     Box(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxHeight()
+                                            .size(36.dp)
                                             .bounceClick(0.92f)
                                             .clip(CircleShape)
                                             .clickable { showAddToPlaylistInPlayer = true },
@@ -2000,77 +2191,6 @@ fun FullPlayer(
                                         )
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Standalone Transition Button (42.dp circle with spring rotation and CAVA / Close morph)
-                val isActionActive = showVolumeBar || showSpeedBar
-
-                val transitionRotation by animateFloatAsState(
-                    targetValue = when {
-                        isActionActive -> 90f
-                        isAdvancedPillVisible -> 180f
-                        else -> 0f
-                    },
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMediumLow
-                    ),
-                    label = "transitionRotation"
-                )
-
-                Surface(
-                    shape = CircleShape,
-                    color = pillBg,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .bounceClick(0.92f)
-                        .clip(CircleShape)
-                        .clickable {
-                            if (isActionActive) {
-                                showVolumeBar = false
-                                showSpeedBar = false
-                            } else {
-                                isAdvancedPillVisible = !isAdvancedPillVisible
-                            }
-                        }
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer { rotationZ = transitionRotation },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        AnimatedContent(
-                            targetState = isActionActive,
-                            transitionSpec = {
-                                (fadeIn(animationSpec = tween(180)) + scaleIn(initialScale = 0.5f))
-                                    .togetherWith(fadeOut(animationSpec = tween(150)) + scaleOut(targetScale = 0.5f))
-                            },
-                            label = "TransitionButtonIcon"
-                        ) { showClose ->
-                            if (showClose) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = stringResource(R.string.hide_options),
-                                    tint = actionIconTint,
-                                    modifier = Modifier.size(19.dp)
-                                )
-                            } else {
-                                val dotTint by animateColorAsState(
-                                    targetValue = if (isAdvancedPillVisible) actionIconTint else activeAccent,
-                                    label = "dotTint"
-                                )
-                                CavaThreeDots(
-                                    isPlaying = isPlaying,
-                                    visualizerData = effectiveVisualizerData,
-                                    tint = dotTint,
-                                    modifier = Modifier.height(18.dp)
-                                )
                             }
                         }
                     }
@@ -2260,17 +2380,6 @@ fun FullPlayer(
                 playbackManager = playbackManager,
                 currentSong = song,
                 onDismiss = { showCustomRepeatDialog = false }
-            )
-        }
-
-        if (showCustomSleepTimerDialogInPlayer) {
-            CustomSleepTimerDialog(
-                currentMinutes = playbackManager.sleepTimerMinutes,
-                currentSong = song,
-                onDismiss = { showCustomSleepTimerDialogInPlayer = false },
-                onSetTimer = { minutes ->
-                    playbackManager.setCustomSleepTimer(minutes)
-                }
             )
         }
     }
