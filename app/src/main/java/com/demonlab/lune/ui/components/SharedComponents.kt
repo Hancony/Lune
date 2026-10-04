@@ -74,6 +74,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -1405,7 +1406,10 @@ fun OptionButton(
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = labelColor
+            color = labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
         )
         if (sublabel != null) {
             Spacer(modifier = Modifier.height(2.dp))
