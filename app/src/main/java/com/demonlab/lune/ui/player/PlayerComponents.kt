@@ -1211,13 +1211,13 @@ fun FullPlayer(
                         .padding(bottom = if (isLandscape) 8.dp else 36.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Add to Playlist button matching Equalizer container design
+                    // Add to Playlist button: Material 3 Expressive rounded square container
                     Surface(
                         onClick = { showAddToPlaylistInPlayer = true },
-                        shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp, topEnd = 4.dp, bottomEnd = 4.dp),
+                        shape = RoundedCornerShape(14.dp),
                         color = topBarBtnBg,
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(46.dp)
                             .bounceClick()
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -1225,7 +1225,7 @@ fun FullPlayer(
                                 imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
                                 contentDescription = stringResource(R.string.add_to_playlist),
                                 tint = topBarBtnTint,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -1284,10 +1284,10 @@ fun FullPlayer(
                                 val eqIntent = Intent(context, EqualizerActivity::class.java)
                                 context.startActivity(eqIntent)
                             },
-                            shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp, topEnd = 4.dp, bottomEnd = 4.dp),
+                            shape = RoundedCornerShape(topStart = 23.dp, bottomStart = 23.dp, topEnd = 5.dp, bottomEnd = 5.dp),
                             color = topBarBtnBg,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(46.dp)
                                 .bounceClick()
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -1295,7 +1295,7 @@ fun FullPlayer(
                                     imageVector = Icons.Default.GraphicEq,
                                     contentDescription = stringResource(R.string.eq_title),
                                     tint = if (playbackManager.isEqEnabled) topBarBtnTint else topBarBtnTint.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
@@ -1303,10 +1303,10 @@ fun FullPlayer(
                         // 2. Extra Options BottomSheet Button
                         Surface(
                             onClick = { showOptionsSheet = true },
-                            shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 20.dp, bottomEnd = 20.dp),
+                            shape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp, topEnd = 23.dp, bottomEnd = 23.dp),
                             color = topBarBtnBg,
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(46.dp)
                                 .bounceClick()
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -1314,7 +1314,7 @@ fun FullPlayer(
                                     imageVector = playbackManager.currentOutputIcon,
                                     contentDescription = playbackManager.currentOutputName,
                                     tint = topBarBtnTint,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
@@ -1485,6 +1485,9 @@ fun FullPlayer(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
+                    val targetAmplitude = if (isPlaying) 1f else 0f
+                    val amplitudeLambda: (Float) -> Float = remember(targetAmplitude) { { _: Float -> targetAmplitude } }
+
                     LinearWavyProgressIndicator(
                         progress = { progress },
                         modifier = Modifier
@@ -1492,7 +1495,7 @@ fun FullPlayer(
                             .padding(horizontal = 4.dp),
                         color = if (useBlurControls) Color.White else MaterialTheme.colorScheme.primary,
                         trackColor = if (useBlurControls) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant,
-                        amplitude = { 1f }
+                        amplitude = amplitudeLambda
                     )
 
                     val infiniteTransition = rememberInfiniteTransition(label = "thumbRotation")
