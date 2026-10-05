@@ -1176,16 +1176,36 @@ fun FullPlayer(
             dynamicPrimaryColor
         }
 
-        val topBarBtnBg = if (hasBlurBackground) {
-            Color.White.copy(alpha = 0.15f)
+        val topBarBtnBg = if (useBlurControls || hasBlurBackground) {
+            blurContainerColor
+        } else if (useCustomControlsColor) {
+            dynamicPrimaryColor.copy(alpha = 0.16f)
+        } else if (isAmoled) {
+            Color(0xFF222222)
+        } else if (isDarkTheme) {
+            Color.Black.copy(alpha = 0.40f)
         } else {
-            dynamicPrimaryColor.copy(alpha = 0.12f)
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
         }
 
-        val topBarBtnTint = if (hasBlurBackground) {
+        val topBarBtnTint = if (useBlurControls || hasBlurBackground) {
             Color.White
-        } else {
+        } else if (useCustomControlsColor) {
             dynamicPrimaryColor
+        } else {
+            MaterialTheme.colorScheme.primary
+        }
+
+        val eqIconTint = if (playbackManager.isEqEnabled) {
+            topBarBtnTint
+        } else {
+            if (useBlurControls || hasBlurBackground) {
+                Color.White.copy(alpha = 0.5f)
+            } else if (useCustomControlsColor) {
+                dynamicPrimaryColor.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            }
         }
 
         val coverSection: @Composable () -> Unit = {
@@ -1208,7 +1228,7 @@ fun FullPlayer(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = if (isLandscape) 8.dp else 36.dp),
+                        .padding(bottom = if (isLandscape) 8.dp else 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Add to Playlist button: Material 3 Expressive rounded square container
@@ -1294,7 +1314,7 @@ fun FullPlayer(
                                 Icon(
                                     imageVector = Icons.Default.GraphicEq,
                                     contentDescription = stringResource(R.string.eq_title),
-                                    tint = if (playbackManager.isEqEnabled) topBarBtnTint else topBarBtnTint.copy(alpha = 0.6f),
+                                    tint = eqIconTint,
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
